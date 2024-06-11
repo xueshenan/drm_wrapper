@@ -5,6 +5,7 @@ set(DRM_TEST_NAME drm_test)
 add_subdirectory(base)
 
 add_executable(${DRM_TEST_NAME}
+    drm_utils.cc
     drm_wrapper.cc
     drm_test.cc
 )
