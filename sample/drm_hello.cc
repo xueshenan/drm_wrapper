@@ -27,58 +27,54 @@ static int modeset_create_fb(int fd, struct buffer_object *bo) {
     struct drm_mode_create_dumb create = {};
     struct drm_mode_map_dumb map = {};
 
+    uint32_t pixel_format = DRM_FORMAT_XRGB8888;  //DRM_FORMAT_NV12
     create.width = bo->width;
     create.height = bo->height;  // bo->height;
     create.bpp = 32;             // 8 for nv12
-
-    bo->pitch = create.pitch;
-    bo->size = create.size;
-    bo->handle = create.handle;
     printf("bo info width:%d, height:%d, bpp:%d\n", create.width, create.height, create.bpp);
+
+    /* handle, pitch, size will be returned */
     int ret = drmIoctl(fd, DRM_IOCTL_MODE_CREATE_DUMB, &create);
-
-    // uint32_t bo_handles[4] = {
-    //     0,
-    // };
-    // uint32_t pitches[4] = {
-    //     0,
-    // };
-    // uint32_t offsets[4] = {
-    //     0,
-    // };
-
-    // FILE *fp = fopen("sample.yuv", "rb");
-    // if (fp == NULL) {
-    //     printf("cannot open sample yuv\n");
-    //     return 1;
-    // }
-    // int buffer_size = 1920 * 1080 * 3 / 2;
-    // uint8_t *mem_buffer = (uint8_t *)malloc(buffer_size);
-    // int read_size = fread(mem_buffer, buffer_size, 0, fp);
-    // fclose(fp);
-
-    // for (int i = 0; i < 2; i++) {
-    //     bo_handles[i] = bo->vaddr;
-
-    //     if (i == 0) {
-    //         pitches[i] = 1920;
-    //         offsets[i] = 0;
-    //     } else {
-    //         pitches[i] = 1920 / 2;
-    //         offsets[i] = 1920 * 1080;
-    //     }
-    // }
-
-    // ret = drmModeAddFB2(fd, bo->width, bo->height, DRM_FORMAT_NV12, bo_handles, pitches, offsets,
-    //                     &bo->fb_id, 0);
 
     /* bind the dumb-buffer to an FB object */
     bo->pitch = create.pitch;
     bo->size = create.size;
     bo->handle = create.handle;
-    ret =
-        drmModeAddFB(fd, bo->width, bo->height, 24, create.bpp, bo->pitch, bo->handle, &bo->fb_id);
-    printf("addFB ret:%d, bo pitch:%d, size:%d,handle:%d\n", ret, bo->pitch, bo->size, bo->handle);
+    printf("drm create dumb pitch:%d, size:%d,handle:%d\n", bo->pitch, bo->size, bo->handle);
+
+    uint32_t bo_handles[4] = {
+        0,
+    };
+    uint32_t pitches[4] = {
+        0,
+    };
+    uint32_t offsets[4] = {
+        0,
+    };
+
+    bo_handles[0] = bo->handle;
+    // bo_handles[1] = bo->vaddr + create.width * create.height;
+    pitches[0] = bo->pitch;
+    pitches[1] = 0;
+    offsets[0] = 0;
+    offsets[1] = 0;
+
+    ret = drmModeAddFB2(fd, create.width, create.height, pixel_format, bo_handles, pitches, offsets,
+                        &bo->fb_id, 0);
+
+    // ret =
+    //     drmModeAddFB(fd, create.width, create.height, 24, create.bpp, bo->pitch, bo->handle, &bo->fb_id);
+    printf("addFB ret:%d, fb_id:%d\n", ret, bo->fb_id);
+
+    FILE *fp = fopen("sample.yuv", "rb");
+    if (fp == NULL) {
+        printf("cannot open sample yuv\n");
+        return 1;
+    }
+    int buffer_size = create.width * create.height * 3 / 2;
+    uint8_t *mem_buffer = (uint8_t *)malloc(buffer_size);
+    int read_size = fread(mem_buffer, buffer_size, 0, fp);
+    fclose(fp);
 
     map.handle = create.handle;
     drmIoctl(fd, DRM_IOCTL_MODE_MAP_DUMB, &map);
@@ -134,6 +130,8 @@ int main(int argc, char **argv) {
     struct buffer_object buf;
 
     const char *driver_name = "msm_drm";
+    memset(&buf, 0, sizeof(buffer_object));
+
     fd = drmOpen(driver_name, NULL);
     // fd = open("/dev/dri/card0", O_RDWR | O_CLOEXEC);
     if (fd < 0) {
