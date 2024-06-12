@@ -1,18 +1,10 @@
-project(qcomm-drm)
+cmake_minimum_required(VERSION 3.12)
 
-set(DRM_TEST_NAME drm_test)
+project(qcomm-drm)
 
 add_subdirectory(base)
 
-add_executable(${DRM_TEST_NAME}
-    drm_utils.cc
-    drm_wrapper.cc
-    drm_test.cc
-)
+add_subdirectory(src)
 
-target_include_directories(${DRM_TEST_NAME} PUBLIC "/usr/include/drm")
+add_subdirectory(test)
 
-target_link_libraries(${DRM_TEST_NAME} drm)
-target_link_libraries(${DRM_TEST_NAME} base)
-
-install(TARGETS ${DRM_TEST_NAME} RUNTIME DESTINATION "bin")

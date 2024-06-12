@@ -163,7 +163,7 @@ void DrmWrapper::close() {
 
 DrmWrapper::DrmWrapper() {
     _conn_id = -1;
-    _plane_id = 58;  //TODO(anxs) temp value
+    _plane_id = 49;  //TODO(anxs) temp value
     _restore_crtc = false;
 }
 

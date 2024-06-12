@@ -30,9 +30,12 @@ uint32_t drm_bpp_from_drm_format(uint32_t drm_format) {
         case DRM_FORMAT_RGB888:
             bpp = 24;
             break;
-        default:
+        case DRM_FORMAT_ARGB8888:
+        case DRM_FORMAT_ABGR8888:
             bpp = 32;
             break;
+        default:
+            bpp = 32;
     }
     return bpp;
 }
