@@ -43,7 +43,7 @@ static int modeset_create_fb(int fd, struct buffer_object *bo) {
 
     ///< UV buffer
     create.width = bo->width;
-    create.height = bo->height / 2;
+    create.height = bo->height;
     create.bpp = 8;
 
     ret = drmIoctl(fd, DRM_IOCTL_MODE_CREATE_DUMB, &create);
@@ -200,7 +200,7 @@ int main(int argc, char **argv) {
 
     /* crop the rect from framebuffer(100, 150) to crtc(50, 50) */
     int crop_w = buf.width;
-    int crop_h = buf.height / 2;
+    int crop_h = buf.height;
     drmModeSetPlane(fd, plane_id, crtc_id, buf.fb_id, 0, 0, 0, crop_w, crop_h, 0, 0, crop_w << 16,
                     crop_h << 16);
 
