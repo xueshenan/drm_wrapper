@@ -16,31 +16,42 @@
 struct buffer_object {
     uint32_t width;
     uint32_t height;
-    uint32_t pitch;
-    uint32_t handle;
-    uint32_t size;
-    uint8_t *vaddr;
+    uint32_t pitch[4];
+    uint32_t handle[4];
+    uint32_t size[4];
+    uint8_t *vaddr[4];
     uint32_t fb_id;
 };
 
 static int modeset_create_fb(int fd, struct buffer_object *bo) {
+    uint32_t pixel_format = DRM_FORMAT_NV12;  //DRM_FORMAT_NV12 DRM_FORMAT_XRGB8888
+
     struct drm_mode_create_dumb create = {};
-    struct drm_mode_map_dumb map = {};
-
-    uint32_t pixel_format = DRM_FORMAT_XRGB8888;  //DRM_FORMAT_NV12
+    ///< Y buffer
     create.width = bo->width;
-    create.height = bo->height;  // bo->height;
-    create.bpp = 32;             // 8 for nv12
-    printf("bo info width:%d, height:%d, bpp:%d\n", create.width, create.height, create.bpp);
-
+    create.height = bo->height;
+    create.bpp = 8;
     /* handle, pitch, size will be returned */
     int ret = drmIoctl(fd, DRM_IOCTL_MODE_CREATE_DUMB, &create);
 
-    /* bind the dumb-buffer to an FB object */
-    bo->pitch = create.pitch;
-    bo->size = create.size;
-    bo->handle = create.handle;
-    printf("drm create dumb pitch:%d, size:%d,handle:%d\n", bo->pitch, bo->size, bo->handle);
+    bo->pitch[0] = create.pitch;
+    bo->size[0] = create.size;
+    bo->handle[0] = create.handle;
+
+    printf("drm create Y dump pitch:%d, size:%lld,handle:%d\n", create.pitch, create.size,
+           create.handle);
+
+    ///< UV buffer
+    create.width = bo->width;
+    create.height = bo->height / 2;
+    create.bpp = 8;
+
+    ret = drmIoctl(fd, DRM_IOCTL_MODE_CREATE_DUMB, &create);
+    printf("drm create UV dumb pitch:%d, size:%lld,handle:%d\n", create.pitch, create.size,
+           create.handle);
+    bo->pitch[1] = create.pitch;
+    bo->size[1] = create.size;
+    bo->handle[1] = create.handle;
 
     uint32_t bo_handles[4] = {
         0,
@@ -52,10 +63,10 @@ static int modeset_create_fb(int fd, struct buffer_object *bo) {
         0,
     };
 
-    bo_handles[0] = bo->handle;
-    // bo_handles[1] = bo->vaddr + create.width * create.height;
-    pitches[0] = bo->pitch;
-    pitches[1] = 0;
+    bo_handles[0] = bo->handle[0];
+    bo_handles[1] = bo->handle[1];
+    pitches[0] = bo->pitch[0];
+    pitches[1] = bo->pitch[1];
     offsets[0] = 0;
     offsets[1] = 0;
 
@@ -71,39 +82,60 @@ static int modeset_create_fb(int fd, struct buffer_object *bo) {
         printf("cannot open sample yuv\n");
         return 1;
     }
-    int buffer_size = create.width * create.height * 3 / 2;
+    int buffer_size = bo->width * bo->height * 3 / 2;
     uint8_t *mem_buffer = (uint8_t *)malloc(buffer_size);
-    int read_size = fread(mem_buffer, buffer_size, 0, fp);
+    int read_size = fread(mem_buffer, buffer_size, 1, fp);
     fclose(fp);
 
-    map.handle = create.handle;
+    struct drm_mode_map_dumb map = {};
+    map.handle = bo->handle[0];
     drmIoctl(fd, DRM_IOCTL_MODE_MAP_DUMB, &map);
 
-    bo->vaddr = (uint8_t *)mmap(0, create.size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, map.offset);
+    ///< Y buffer
+    bo->vaddr[0] =
+        (uint8_t *)mmap(0, bo->size[0], PROT_READ | PROT_WRITE, MAP_SHARED, fd, map.offset);
+    printf("vaddress 0 fd : %d, handle : %d, vaddr: %p\n", fd, bo->handle[0], bo->vaddr[0]);
 
-    uint8_t *addr = bo->vaddr;
-    for (uint32_t i = 0; i < bo->height; i++) {
-        for (uint32_t j = 0; j < bo->pitch; j += 4) {
-            addr[j + 0] = 0x33;  // B
-            addr[j + 1] = 0xff;  // G
-            addr[j + 2] = 0xff;  // R
-            addr[j + 3] = 0xff;  // A
-        }
-        addr += bo->pitch;
-    }
+    memcpy(bo->vaddr[0], mem_buffer, bo->width * bo->height);
+
+    struct drm_mode_map_dumb map2 = {};
+    map2.handle = bo->handle[1];
+    drmIoctl(fd, DRM_IOCTL_MODE_MAP_DUMB, &map2);
+    bo->vaddr[1] =
+        (uint8_t *)mmap(0, bo->size[1], PROT_READ | PROT_WRITE, MAP_SHARED, fd, map2.offset);
+    printf("vaddress 0 fd : %d, handle : %d, vaddr: %p\n", fd, bo->handle[1], bo->vaddr[1]);
+    memcpy(bo->vaddr[1], mem_buffer + bo->width * bo->height, bo->width * bo->height / 2);
+
+    // uint8_t *addr = bo->vaddr;
+    // for (uint32_t i = 0; i < bo->height; i++) {
+    //     for (uint32_t j = 0; j < bo->pitch; j += 4) {
+    //         addr[j + 0] = 0x33;  // B
+    //         addr[j + 1] = 0xff;  // G
+    //         addr[j + 2] = 0xff;  // R
+    //         addr[j + 3] = 0xff;  // A
+    //     }
+    //     addr += bo->pitch;
+    // }
 
     return 0;
 }
 
 static void modeset_destroy_fb(int fd, struct buffer_object *bo) {
-    struct drm_mode_destroy_dumb destroy = {};
-
     drmModeRmFB(fd, bo->fb_id);
 
-    munmap(bo->vaddr, bo->size);
+    for (uint32_t i = 0; i < 4; i++) {
+        if (bo->vaddr[i] != NULL && bo->size[i] > 0) {
+            munmap(bo->vaddr[i], bo->size[i]);
+        }
+    }
 
-    destroy.handle = bo->handle;
-    drmIoctl(fd, DRM_IOCTL_MODE_DESTROY_DUMB, &destroy);
+    struct drm_mode_destroy_dumb destroy = {};
+    for (uint32_t i = 0; i < 4; i++) {
+        if (bo->handle[i] > 0) {
+            destroy.handle = bo->handle[i];
+            drmIoctl(fd, DRM_IOCTL_MODE_DESTROY_DUMB, &destroy);
+        }
+    }
 }
 
 static void log_drm_version(int fd) {
@@ -139,7 +171,7 @@ int main(int argc, char **argv) {
         return 0;
     }
     printf("open %s result fd %d\n", driver_name, fd);
-    log_drm_version(fd);
+    // log_drm_version(fd);
 
     res = drmModeGetResources(fd);
     if (res == NULL) {
@@ -167,8 +199,10 @@ int main(int argc, char **argv) {
     getchar();
 
     /* crop the rect from framebuffer(100, 150) to crtc(50, 50) */
-    drmModeSetPlane(fd, plane_id, crtc_id, buf.fb_id, 0, 50, 50, 320, 320, 100 << 16, 150 << 16,
-                    320 << 16, 320 << 16);
+    int crop_w = buf.width;
+    int crop_h = buf.height / 2;
+    drmModeSetPlane(fd, plane_id, crtc_id, buf.fb_id, 0, 0, 0, crop_w, crop_h, 0, 0, crop_w << 16,
+                    crop_h << 16);
 
     getchar();
 
